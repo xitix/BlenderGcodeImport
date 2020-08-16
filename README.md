@@ -1,10 +1,9 @@
 BlenderGcodeImport
 ==================
 
-Python script to load gcode files produced by Slic3r into Blender
+Python script to load gcode files produced by Slic3r*(Cura & IdeaMaker) into Blender
 
-This work was based on the plugin (now defunct?) by Simon Kirkby.  I wrote this because the previous one 
-did not work with more recent (2.7.0) versions of Blender.
+This work was based on the plugin (now defunct?) by Simon Kirkby. It was modified to work with more recent (2.83.4) versions of Blender.
 
 To use this download the plugin and start Blender
 
