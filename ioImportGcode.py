@@ -60,14 +60,16 @@ class IMPORT_OT_gcode(bpy.types.Operator):
         # set of polylines 
         self.polys = []
 
-        # each layer is a set of polylines at a constant Z
-        self.layers = []
+        # each layer is a set of polylines at a constant Z or float (z-hop)
+        self.layers = {}
 
         # set of Z elevation changes.  Most common is layer height
         self.thickness = { }
         
         self.ySquash = 0.5
-        self.xOoze = 1.65
+        self.xOoze = 1.15
+
+        self.Prusa=False
 
 
     ##### DRAW #####
@@ -99,6 +101,8 @@ class IMPORT_OT_gcode(bpy.types.Operator):
         f = open(fileName)
         for line in f.readlines():
             # remove comments and leading/trailing whitespace
+            if 'PrusaSlicer' in line: 
+                self.Prusa=True
             line = line.split(';', 1)[0].strip()
 
             # skip the blank lines
@@ -110,7 +114,7 @@ class IMPORT_OT_gcode(bpy.types.Operator):
 
             self.dispatch(tokens)
         f.close()
-        self.newLayer(-1.0)
+        self.newLayer(-1.0, -1.0)
         
         #print ('---------- build ------------')
         #print (' %d slices' % len(self.layers) )
@@ -151,14 +155,13 @@ class IMPORT_OT_gcode(bpy.types.Operator):
 
 
         for layerNum,layer in enumerate(self.layers):
-
             layerName = self.obName + '_slice_%d' % layerNum
             curveData = bpy.data.curves.new(layerName, type='CURVE')
             curveData.dimensions = '3D'
             curveData.bevel_object = profileObject
             #print (layerName + ':')
 
-            for poly in layer:
+            for poly in self.layers[layer]:
                 pointNum = 0
                 for point in poly:
                     if pointNum == 0:
@@ -202,15 +205,20 @@ class IMPORT_OT_gcode(bpy.types.Operator):
             self.polys.append( self.points[:] )
             self.points = []
     
-    ##### newLayer #####
-    def newLayer(self, delta):
+    ##### newLayer ##### // zetta
+    def newLayer(self, delta, zetta):
         # stash existing points into curve
         self.newPoly()
 
         # stash existing set of polys into layer
         if len(self.polys) > 0:
             #print( 'new layer with %d polys' % len(self.polys) )
-            self.layers.append( self.polys[:] )
+            if zetta in self.layers:
+                t = self.layers[zetta]
+                t.extend( self.polys[:] )
+                self.layers[zetta] = t
+            else:
+                self.layers[zetta] = self.polys[:]
             
             self.polys = []
 
@@ -220,16 +228,30 @@ class IMPORT_OT_gcode(bpy.types.Operator):
                 else:
                     self.thickness[delta] = 1
     
-    ##### moveTo #####
+    ##### moveTo ##### modificat E newlayer
     def moveTo(self, newPos):
         if newPos['Z'] != self.pos['Z']:
             delta = newPos['Z'] - self.pos['Z']
-            self.newLayer(delta)
+            zetta = self.pos['Z']
+            self.newLayer(delta, zetta)
         
-        if newPos['E'] <= self.pos['E'] or newPos['E'] <= 0.0:
-            self.newPoly()
+        # modificat or newPos['E'] <= self.pos['E']
+        if self.Prusa: 
+            if newPos['E'] is None or newPos['E'] <= 0.0:
+                self.newPoly()
+        else:
+            if newPos['E'] is None or newPos['E'] <= 0.0 or newPos['E'] <= self.pos['E']:
+                self.newPoly()
         
-        if newPos['E'] > 0 and newPos['E'] >= self.pos['E']:
+        # modificat or and newPos['E'] >= self.pos['E']
+        if newPos['E'] is not None and newPos['E'] > 0 :
+            # adaugat conditii x, y, z 
+            if newPos['Z'] is None :
+                newPos['Z']=self.pos['Z']
+            if newPos['X'] is None :
+                newPos['X']=self.pos['X']
+            if newPos['Y'] is None :
+                newPos['Y']=self.pos['Y']
             self.points.append([newPos['X'],
                             newPos['Y'],
                             newPos['Z']])
@@ -275,6 +297,10 @@ class IMPORT_OT_gcode(bpy.types.Operator):
         '''move to'''
         self.G0(tokens)
 
+    def G4(self, tokens):
+        '''wait'''
+        pass
+
     def G21(self,tokens):
         '''set units mm'''
         pass
@@ -292,6 +318,10 @@ class IMPORT_OT_gcode(bpy.types.Operator):
         # no matter what we won't be extruding
         npos['E'] = 0.0
         self.moveTo(npos)
+        
+    def G80(self, tokens):
+        '''Mesh-based Z probe'''
+        pass
 
     def G90(self, tokens):
         '''set absolute positioning'''
@@ -308,10 +338,18 @@ class IMPORT_OT_gcode(bpy.types.Operator):
             self.newPoly()
 
         self.pos = newPos
+        
+    def M73(self, tokens):
+        '''Set Print Progress'''
+        pass        
 
     def M82(self, tokens):
         '''set extruder absolute mode'''
         pass
+
+    def M83(self, tokens):
+        '''E Relative'''
+        pass        
 
     def M84(self, tokens):
         '''stop idle hold'''
@@ -332,7 +370,38 @@ class IMPORT_OT_gcode(bpy.types.Operator):
     def M109(self,tokens):
         '''set extruder temperature and wait'''
         pass
-
+    def M115(self,tokens):
+        '''Firmware Info'''
+        pass
+    def M140(self,tokens):
+        '''Set Bed Temperature'''
+        pass
+    def M190(self,tokens):
+        '''Wait for Bed Temperature'''
+        pass             
+    def M201(self,tokens):
+        '''Set Print Max Acceleration'''
+        pass     
+    def M203(self,tokens):
+        '''Set Max Feedrate'''
+        pass     
+    def M204(self,tokens):
+        '''Set Starting Acceleration'''
+        pass     
+    def M205(self,tokens):
+        '''Set Advanced Settings'''
+        pass     
+    def M221(self,tokens):
+        '''Set Flow Percentage'''
+        pass     
+    def M900(self,tokens):
+        '''Linear Advance Factor'''
+        pass     
+    def M907(self,tokens):
+        '''Set Motor Current'''
+        pass     
+    def M862(self,tokens):
+        '''PRUSA FW'''
 
 
 
@@ -352,9 +421,9 @@ def unregister():
     classes = (
     IMPORT_OT_gcode,
     )
-    from bpy.utils import register_class
+    from bpy.utils import unregister_class
     for cls in classes:
-        register_class(cls)
+        unregister_class(cls)
     bpy.types.TOPBAR_MT_file_import.remove(menu_func)
 
 if __name__ == "__main__":
